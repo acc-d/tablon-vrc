@@ -1,14 +1,14 @@
 {
-  "name": "Assetto Corsa Community",
-  "short_name": "ACC",
+  "name": "VRC | Virtual Rally Championship",
+  "short_name": "VRC",
   "description": "Información oficial, comunicados y documentos del rally",
   "lang": "es",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#f4f6f8",
-  "theme_color": "#081b32",
+  "background_color": "#f2f1ee",
+  "theme_color": "#171717",
   "icons": [
     {
       "src": "./icons/icon-192.png",
