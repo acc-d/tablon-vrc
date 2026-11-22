@@ -1,6 +1,6 @@
 const SCOPE = self.registration.scope;
 const CACHE_PREFIX = `vrc:${new URL(SCOPE).pathname}:`;
-const CACHE_VERSION = `${CACHE_PREFIX}v6`;
+const CACHE_VERSION = `${CACHE_PREFIX}v7`;
 const BOARD_URL = new URL("./index.html", SCOPE).href;
 const APP_SHELL = [
   "./",
