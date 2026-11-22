@@ -39,6 +39,9 @@ const documentTemplate =
 
 let deferredInstallPrompt = null;
 let waitingServiceWorker = null;
+let serviceWorkerRegistration;
+let enablingNotifications = false;
+const confirmedSubscriptions = new Map();
 
 function formatDate(dateValue) {
   return new Intl.DateTimeFormat("es-ES", {
@@ -120,7 +123,7 @@ async function enterEvent(code) {
     await loadPublicBoard();
   } finally {
     accessButton.disabled = false;
-    accessButton.textContent = "Entrar";
+    accessButton.textContent = "Abrir tablón";
   }
 
   if (!activeEvent) {
@@ -150,6 +153,7 @@ changeEventButton.addEventListener("click", async () => {
 
   localStorage.removeItem(EVENT_CODE_KEY);
   activeEvent = null;
+  refreshNotificationButton();
   eventCodeInput.value = "";
   showAccessScreen();
 });
@@ -317,7 +321,7 @@ function renderBoardData(payload) {
     dateText
   ].filter(Boolean).join(" · ");
 
-  document.title = `${event.name} | Rally Board`;
+  document.title = `${event.name} | VRC`;
 
   const announcements = posts.filter(
     (post) => post.type === "news" || !post.type
@@ -387,6 +391,7 @@ async function loadPublicBoard() {
     }
 
     activeEvent = event;
+    refreshNotificationButton();
     cacheKey = `rally-board:${event.slug}`;
     accessScreen.hidden = true;
 
@@ -463,7 +468,17 @@ function urlBase64ToUint8Array(base64String) {
   ));
 }
 
-function updateNotificationButton() {
+function refreshNotificationButton() {
+  void updateNotificationButton().catch((error) => {
+    console.error("No se pudo comprobar la suscripción:", error);
+    notificationsButton.textContent = "Reintentar avisos";
+    notificationsButton.disabled = !activeEvent;
+  });
+}
+
+async function updateNotificationButton() {
+  if (enablingNotifications) return;
+
   if (
     !("serviceWorker" in navigator) ||
     !("PushManager" in window) ||
@@ -474,8 +489,8 @@ function updateNotificationButton() {
     return;
   }
 
-  if (window.Notification.permission === "granted") {
-    notificationsButton.textContent = "Avisos activados";
+  if (!activeEvent || !serviceWorkerRegistration) {
+    notificationsButton.textContent = "Activar avisos";
     notificationsButton.disabled = true;
     return;
   }
@@ -486,11 +501,28 @@ function updateNotificationButton() {
     return;
   }
 
-  notificationsButton.textContent = "Activar avisos";
-  notificationsButton.disabled = false;
+  const event = activeEvent;
+  const registration = await serviceWorkerRegistration;
+  const subscription = await registration.pushManager.getSubscription();
+  if (event !== activeEvent || enablingNotifications) return;
+
+  const key = subscriptionKey(registration, event);
+  const enabled = window.Notification.permission === "granted" &&
+    Boolean(subscription && subscription.endpoint ===
+      (confirmedSubscriptions.get(key) ?? localStorage.getItem(key)));
+  notificationsButton.textContent = enabled ? "Avisos activados" : "Activar avisos";
+  notificationsButton.disabled = enabled;
+}
+
+function subscriptionKey(registration, event) {
+  return `vrc:push:${registration.scope}:${event.slug}`;
 }
 
 async function enablePushNotifications() {
+  const event = activeEvent;
+  if (!event || enablingNotifications || !serviceWorkerRegistration) return;
+
+  enablingNotifications = true;
   notificationsButton.disabled = true;
   notificationsButton.textContent = "Activando…";
 
@@ -498,11 +530,11 @@ async function enablePushNotifications() {
     const permission = await window.Notification.requestPermission();
 
     if (permission !== "granted") {
-      updateNotificationButton();
       return;
     }
 
-    const registration = await navigator.serviceWorker.ready;
+    const registration = await serviceWorkerRegistration;
+    if (!registration.active) await navigator.serviceWorker.ready;
     let subscription =
       await registration.pushManager.getSubscription();
 
@@ -519,7 +551,7 @@ async function enablePushNotifications() {
     const { error } = await supabase
       .from("push_subscriptions")
       .insert({
-        event_slug: activeEvent.slug,
+        event_slug: event.slug,
         endpoint: subscriptionData.endpoint,
         p256dh: subscriptionData.keys?.p256dh,
         auth: subscriptionData.keys?.auth,
@@ -530,12 +562,19 @@ async function enablePushNotifications() {
       throw error;
     }
 
-    updateNotificationButton();
+    const key = subscriptionKey(registration, event);
+    confirmedSubscriptions.set(key, subscriptionData.endpoint);
+    try {
+      localStorage.setItem(key, subscriptionData.endpoint);
+    } catch (error) {
+      console.warn("No se pudo guardar el estado de los avisos:", error);
+    }
   } catch (error) {
     console.error("No se pudieron activar los avisos:", error);
-    notificationsButton.textContent = "Reintentar avisos";
-    notificationsButton.disabled = false;
     alert(`No se pudieron activar los avisos: ${error.message}`);
+  } finally {
+    enablingNotifications = false;
+    refreshNotificationButton();
   }
 }
 
@@ -549,8 +588,9 @@ async function registerServiceWorker() {
   }
 
   try {
-    const registration =
-      await navigator.serviceWorker.register("./service-worker.js");
+    serviceWorkerRegistration = navigator.serviceWorker.register("./service-worker.js");
+    const registration = await serviceWorkerRegistration;
+    refreshNotificationButton();
 
     if (registration.waiting) {
       waitingServiceWorker = registration.waiting;
@@ -639,7 +679,7 @@ window.addEventListener("offline", updateConnectionStatus);
 
 showView("announcements");
 updateConnectionStatus();
-updateNotificationButton();
+refreshNotificationButton();
 registerServiceWorker();
 
 const savedEventCode = localStorage.getItem(EVENT_CODE_KEY);
