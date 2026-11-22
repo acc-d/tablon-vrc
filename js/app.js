@@ -515,7 +515,7 @@ async function updateNotificationButton() {
 }
 
 function subscriptionKey(registration, event) {
-  return `vrc:push:${registration.scope}:${event.slug}`;
+  return `vrc:push:${registration.scope}:${event.id}`;
 }
 
 async function enablePushNotifications() {
@@ -551,7 +551,7 @@ async function enablePushNotifications() {
     const { error } = await supabase
       .from("push_subscriptions")
       .insert({
-        event_slug: event.slug,
+        event_id: event.id,
         endpoint: subscriptionData.endpoint,
         p256dh: subscriptionData.keys?.p256dh,
         auth: subscriptionData.keys?.auth,
